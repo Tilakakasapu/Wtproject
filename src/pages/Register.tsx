@@ -15,26 +15,22 @@ interface RegisterForm {
 export default function Register() {
   const navigate = useNavigate();
   const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterForm>();
-  const setAuth = useAuthStore((state) => state);
+  const { register: registerUser } = useAuthStore();
+  const [registerError, setRegisterError] = React.useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const onSubmit = async (data: RegisterForm) => {
+    setRegisterError(null);
+    setIsSubmitting(true);
+
     try {
-      // Mock registration - replace with actual API call
-      console.log('Registration data:', data);
-      setAuth({
-        user: {
-          id: '1',
-          name: data.name,
-          email: data.email,
-          favorites: [],
-          adoptionRequests: [],
-        },
-        isAuthenticated: true,
-        isLoading: false,
-      });
+      // Call the register function from authStore
+      await registerUser(data.name, data.email, data.password);
       navigate('/dashboard');
     } catch (error) {
-      console.error('Registration error:', error);
+      setRegisterError(error instanceof Error ? error.message : 'Registration failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -161,12 +157,19 @@ export default function Register() {
               )}
             </div>
 
+            {registerError && (
+              <div className="text-center text-sm text-red-600">
+                {registerError}
+              </div>
+            )}
+
             <div>
               <button
                 type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500"
+                disabled={isSubmitting}
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create account
+                {isSubmitting ? 'Creating account...' : 'Create account'}
               </button>
             </div>
           </form>
