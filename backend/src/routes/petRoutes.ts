@@ -27,7 +27,7 @@ router.post('/:id/favorite',
         }
   
         const updatedUser = await User.findByIdAndUpdate(
-          user._id, // Now properly typed
+          user._id, 
           { $addToSet: { favorites: req.params.id } },
           { new: true }
         ).populate('favorites');
