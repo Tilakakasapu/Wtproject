@@ -1,7 +1,8 @@
 import express from 'express';
 import passport from 'passport';
 import User from '../models/User';
-import { Request, Response } from 'express'; // Add explicit types
+// import { Request, Response } from 'express'; // Add explicit types
+import { Request, Response, NextFunction } from 'express';
 
 const router = express.Router();
 
@@ -21,10 +22,20 @@ router.post('/register', async (req, res) => {
     }
   });
 
-// Add types to other routes
-router.post('/login', passport.authenticate('local'), (req: Request, res: Response) => {
-  res.json({ message: 'Logged in successfully', user: req.user });
-});
+
+  router.post('/login', (req: Request, res: Response, next: NextFunction) => {
+    passport.authenticate('local', (err: Error | null, user: Express.User | false, info: { message?: string } | undefined) => {
+      if (err) return next(err);
+      if (!user) return res.status(401).json({ message: info?.message || 'Unauthorized' });
+  
+      req.logIn(user, (err: Error | null) => {
+        if (err) return next(err);
+        res.json({ message: 'Logged in successfully', user });
+      });
+    })(req, res, next);
+  });
+  
+
 
 router.get('/logout', (req: Request, res: Response) => {
   req.logout(() => {

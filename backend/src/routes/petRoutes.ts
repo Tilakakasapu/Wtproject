@@ -18,36 +18,48 @@ router.get('/', async (req, res) => {
   });
 // Add to favorites
 router.post('/:id/favorite', 
-    passport.authenticate('jwt', { session: false }),
-    async (req: express.Request, res: express.Response) => {
-      try {
-        const user = req.user as IUser;
-        if (!user) {
-          return res.status(401).json({ error: 'Unauthorized' });
-        }
-  
-        const updatedUser = await User.findByIdAndUpdate(
-          user._id, 
-          { $addToSet: { favorites: req.params.id } },
-          { new: true }
-        ).populate('favorites');
-  
-        res.json(updatedUser?.favorites);
-      } catch (error) {
-        res.status(500).json({ error: 'Server error' });
+  async (req: express.Request, res: express.Response) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
       }
+
+      const pet = await Pet.findById(req.params.id);
+      if (!pet) return res.status(404).json({ error: 'Pet not found' });
+
+      const updatedUser = await User.findByIdAndUpdate(
+        user._id, 
+        { $addToSet: { 
+          favorites: { 
+            pet: pet._id, 
+            imageUrl: pet.imageUrl,
+            name: pet.name,
+            date: new Date() 
+          } 
+        }},
+        { new: true }
+      ).populate('favorites.pet');
+
+      res.json(updatedUser?.favorites);
+    } catch (error) {
+      res.status(500).json({ error: 'Server error' });
     }
-  );
+  }
+);
+
+
+
   
   router.post('/:id/adopt', 
-    passport.authenticate('jwt', { session: false }),
     async (req: express.Request, res: express.Response) => {
       try {
-        const user = req.user as IUser;
+        const user = req.user;
+        
         if (!user) {
           return res.status(401).json({ error: 'Unauthorized' });
         }
-  
+        
         const pet = await Pet.findById(req.params.id);
         if (!pet) return res.status(404).json({ error: 'Pet not found' });
   
@@ -57,6 +69,8 @@ router.post('/:id/favorite',
             adoptionRequests: {
               pet: pet._id,
               status: 'pending',
+              imageUrl:pet.imageUrl,
+              name:pet.name,
               date: new Date()
             }
           }},
@@ -69,7 +83,6 @@ router.post('/:id/favorite',
       }
     }
   );
-  
   
   
 

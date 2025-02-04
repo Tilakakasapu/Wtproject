@@ -7,12 +7,20 @@ passport.use(new LocalStrategy({
     passwordField: 'password'
   }, async (email, password, done) => {
     try {
-      const user = await User.findOne({ email }).select('+password') as IUser;
+      console.log(`🔍 Checking user with email: ${email}`);
+      const user = await User.findOne({ email });
       
-      if (!user) return done(null, false, { message: 'Invalid credentials' });
-      
+      if (!user) {
+        console.log('❌ User not found');
+        return done(null, false, { message: 'Invalid credentials' });
+      }
       const isMatch = await user.comparePassword(password);
-      return isMatch ? done(null, user) : done(null, false, { message: 'Invalid credentials' });
+      if (!isMatch) {
+        console.log('❌ Password incorrect');
+        return done(null, false, { message: 'Invalid credentials' });
+      }
+      console.log('✅ User authenticated successfully');
+      return done(null, user);
     } catch (err) {
       return done(err);
     }

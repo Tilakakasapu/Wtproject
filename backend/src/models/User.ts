@@ -19,6 +19,8 @@ export interface IAdoptionRequest extends mongoose.Types.Subdocument {
   pet: mongoose.Types.ObjectId;
   status: 'pending' | 'approved' | 'rejected';
   date: Date;
+  name:String;
+  imageUrl: String;
 }
 
 const adoptionRequestSchema = new mongoose.Schema<IAdoptionRequest>({
@@ -35,23 +37,24 @@ const adoptionRequestSchema = new mongoose.Schema<IAdoptionRequest>({
   date: {
     type: Date,
     default: Date.now
-  }
+  },
+  name: { type: String},
+  imageUrl: { type: String, required: true },
 });
 
 const userSchema = new mongoose.Schema<IUser>({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  favorites: [{ 
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Pet' 
-  }],
+  favorites: [adoptionRequestSchema],
   adoptionRequests: [adoptionRequestSchema]
 });
-userSchema.methods.comparePassword = async function(
-    candidatePassword: string
-  ): Promise<boolean> {
-    return bcrypt.compare(candidatePassword, this.password);
-  };
+userSchema.methods.comparePassword = async function (password: string) {
+  return await bcrypt.compare(password, this.password);
+};
+userSchema.methods.comparePassword = async function (password: string) {
+  if(password==this.password) return true;
+  else return false;
+};
 
 export default mongoose.model<IUser>('User', userSchema);

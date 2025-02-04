@@ -32,10 +32,10 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
         body: JSON.stringify({ email, password }),
         credentials: 'include'
       });
-
+      console.log(response)
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Login failed');
+        throw new Error('HElo failed' || 'Login failed');
       }
 
       const data = await response.json();
@@ -61,8 +61,6 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
       console.error('Refresh error:', error);
     }
   },
- 
-
   register: async (name: string, email: string, password: string) => {
     try {
       set({ isLoading: true, error: null });

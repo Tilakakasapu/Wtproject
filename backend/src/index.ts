@@ -46,11 +46,10 @@ app.use(session({
       ttl: 24 * 60 * 60, // 1 day
       autoRemove: 'native'
     }),
-    cookie: {
-      maxAge: 1000 * 60 * 60 * 24,
-      httpOnly: true,
-      sameSite: 'lax'
-    }
+    cookie: { 
+      secure: false, // Set to true in production (HTTPS only)
+      maxAge: 24 * 60 * 60 * 1000, // Session expiration time (e.g., 1 day)
+    },
   }));
 
 app.use(passport.initialize());
