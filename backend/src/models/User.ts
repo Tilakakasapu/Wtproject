@@ -1,60 +1,63 @@
-import mongoose from 'mongoose';
-import bcrypt from 'bcrypt';
-export interface IUser extends mongoose.Document {
-    _id: mongoose.Types.ObjectId;
-    name: string;
-    email: string;
-    password: string;
-    favorites: mongoose.Types.ObjectId[];
-    adoptionRequests: mongoose.Types.DocumentArray<{
-      pet: mongoose.Types.ObjectId;
-      status: 'pending' | 'approved' | 'rejected';
-      date: Date;
-    }>;
-    comparePassword(candidatePassword: string): Promise<boolean>;
-  }
+import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IAdoptionRequest extends mongoose.Types.Subdocument {
-  _id: mongoose.Types.ObjectId;
-  pet: mongoose.Types.ObjectId;
+export interface AdoptionRequest {
+  petId: mongoose.Types.ObjectId;
   status: 'pending' | 'approved' | 'rejected';
-  date: Date;
-  name:String;
-  imageUrl: String;
+  createdAt: Date;
 }
 
-const adoptionRequestSchema = new mongoose.Schema<IAdoptionRequest>({
-  pet: { 
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Pet',
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'approved', 'rejected'],
-    default: 'pending'
-  },
-  date: {
-    type: Date,
-    default: Date.now
-  },
-  name: { type: String},
-  imageUrl: { type: String, required: true },
-});
+export interface IUser extends Document {
+  name: string;
+  email: string;
+  password: string;
+  favorites: mongoose.Types.ObjectId[];
+  adoptionRequests: AdoptionRequest[];
+}
 
-const userSchema = new mongoose.Schema<IUser>({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  favorites: [adoptionRequestSchema],
-  adoptionRequests: [adoptionRequestSchema]
+const userSchema = new Schema<IUser>({
+  name: { 
+    type: String, 
+    required: [true, 'Please provide a name'] 
+  },
+  email: { 
+    type: String, 
+    required: [true, 'Please provide an email'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [
+      /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
+      'Please provide a valid email'
+    ]
+  },
+  password: { 
+    type: String, 
+    required: [true, 'Please provide a password'],
+    minlength: [6, 'Password must be at least 6 characters'],
+    select: false // Don't include password by default in queries
+  },
+  favorites: [{ 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Pet' 
+  }],
+  adoptionRequests: [{
+    petId: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Pet', 
+      required: true 
+    },
+    status: { 
+      type: String, 
+      enum: ['pending', 'approved', 'rejected'], 
+      default: 'pending' 
+    },
+    createdAt: { 
+      type: Date, 
+      default: Date.now 
+    }
+  }]
+}, {
+  timestamps: true
 });
-userSchema.methods.comparePassword = async function (password: string) {
-  return await bcrypt.compare(password, this.password);
-};
-userSchema.methods.comparePassword = async function (password: string) {
-  if(password==this.password) return true;
-  else return false;
-};
 
 export default mongoose.model<IUser>('User', userSchema);

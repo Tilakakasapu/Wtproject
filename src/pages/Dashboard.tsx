@@ -1,12 +1,38 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bell, Clock, Heart, LogOut, Settings, User } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
-import { useNavigate } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import axios from 'axios';
+
+// Configure axios
+axios.defaults.withCredentials = true;
+axios.defaults.baseURL = 'http://localhost:5000';
+
+interface Pet {
+  _id: string;
+  name: string;
+  breed: string;
+  age: number;
+  photo: {
+    data: string;
+    contentType: string;
+  };
+}
+
+interface AdoptionRequest {
+  _id: string;
+  petId: Pet;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, isAuthenticated, logout, refreshUserData } = useAuthStore();
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [adoptionRequests, setAdoptionRequests] = useState<AdoptionRequest[]>([]);
+  const [favorites, setFavorites] = useState<Pet[]>([]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -17,9 +43,35 @@ const Dashboard = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        setIsLoading(true);
+        setError(null);
+
+        // Fetch user data
         await refreshUserData();
-      } catch (error) {
-        console.error('Error loading dashboard data:', error);
+
+        // Fetch adoption requests
+        const requestsResponse = await axios.get('/api/pets/user/adoption-requests');
+        if (requestsResponse.data.success === false) {
+          throw new Error(requestsResponse.data.error || 'Failed to fetch adoption requests');
+        }
+        setAdoptionRequests(requestsResponse.data.adoptionRequests || []);
+
+        // Fetch favorites
+        const favoritesResponse = await axios.get('/api/pets/user/favorites');
+        if (favoritesResponse.data.success === false) {
+          throw new Error(favoritesResponse.data.error || 'Failed to fetch favorites');
+        }
+        setFavorites(favoritesResponse.data.favorites || []);
+
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+        if (axios.isAxiosError(err)) {
+          setError(err.response?.data?.error || 'Failed to load dashboard data');
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError('An unexpected error occurred');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -34,8 +86,15 @@ const Dashboard = () => {
     try {
       await logout();
       navigate('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch (err) {
+      console.error('Logout error:', err);
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.error || 'Failed to sign out');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     }
   };
 
@@ -54,6 +113,13 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {/* Error Message */}
+        {error && (
+          <div className="px-4 py-3 mb-6 bg-red-50 border border-red-200 text-red-600 rounded-lg">
+            {error}
+          </div>
+        )}
+
         {/* Welcome Section */}
         <div className="px-4 py-6 sm:px-0">
           <div className="bg-white rounded-lg shadow-sm p-6">
@@ -80,22 +146,26 @@ const Dashboard = () => {
                   <Clock className="h-5 w-5 text-gray-400" />
                 </div>
                 <div className="space-y-4">
-                  {user.adoptionRequests?.map((request) => (
+                  {adoptionRequests.map((request) => (
                     <div
                       key={request._id}
                       className="flex items-center p-4 bg-gray-50 rounded-lg"
                     >
-                      <img
-                        src={request.imageUrl}
-                        alt={request.name}
-                        className="h-12 w-12 rounded-full "
-                      />
-                      <div className="ml-4 flex-1">
-                        <h3 className="text-sm font-medium text-gray-900">{request.name}</h3>
-                        <p className="text-sm text-gray-500">
-                          {new Date(request.date).toLocaleDateString()}
-                        </p>
-                      </div>
+                      {request.petId && (
+                        <>
+                          <img
+                            src={request.petId.photo.data}
+                            alt={request.petId.name}
+                            className="h-12 w-12 rounded-full object-cover"
+                          />
+                          <div className="ml-4 flex-1">
+                            <h3 className="text-sm font-medium text-gray-900">{request.petId.name}</h3>
+                            <p className="text-sm text-gray-500">
+                              {new Date(request.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </>
+                      )}
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                         request.status === 'approved' ? 'bg-green-100 text-green-800' :
                         request.status === 'rejected' ? 'bg-red-100 text-red-800' :
@@ -105,14 +175,14 @@ const Dashboard = () => {
                       </span>
                     </div>
                   ))}
-                  {user.adoptionRequests?.length === 0 && (
+                  {!adoptionRequests.length && (
                     <p className="text-sm text-gray-500 text-center py-4">No adoption requests found</p>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Adoption Requests */}
+            {/* Favorites */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -120,31 +190,32 @@ const Dashboard = () => {
                   <Heart className="h-5 w-5 text-gray-400" />
                 </div>
                 <div className="space-y-4">
-                  {user.adoptionRequests?.map((request) => (
+                  {favorites.map((pet) => (
                     <div
-                      key={request._id}
+                      key={pet._id}
                       className="flex items-center p-4 bg-gray-50 rounded-lg"
                     >
                       <img
-                        src={request.imageUrl}
-                        alt={request.name}
-                        className="h-12 w-12 rounded-full "
+                        src={pet.photo.data}
+                        alt={pet.name}
+                        className="h-12 w-12 rounded-full object-cover"
                       />
                       <div className="ml-4 flex-1">
-                        <h3 className="text-sm font-medium text-gray-900">{request.name}</h3>
+                        <h3 className="text-sm font-medium text-gray-900">{pet.name}</h3>
                         <p className="text-sm text-gray-500">
-                          {new Date(request.date).toLocaleDateString()}
+                          {pet.breed} • {pet.age} years old
                         </p>
                       </div>
-                      <Link to={`/pets/${request.pet}`} >
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full hover:text-blue-700`}>
-                      Visit 
-
-                      </span></Link>
+                      <Link 
+                        to={`/pets/${pet._id}`}
+                        className="px-3 py-1 text-sm font-medium text-rose-600 hover:text-rose-700 hover:underline"
+                      >
+                        View
+                      </Link>
                     </div>
                   ))}
-                  {user.adoptionRequests?.length === 0 && (
-                    <p className="text-sm text-gray-500 text-center py-4">No Favorites found</p>
+                  {!favorites.length && (
+                    <p className="text-sm text-gray-500 text-center py-4">No favorites found</p>
                   )}
                 </div>
               </div>

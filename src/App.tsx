@@ -10,6 +10,10 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import DonatePet from './pages/DonatePet';
+import ResetPassword from './pages/ResetPassword';
+import VerifyPassword from './pages/VerifyPassword';
+import About from './pages/about';
+import Resources from './pages/resources';
 const queryClient = new QueryClient();
 
 function App() {
@@ -25,8 +29,12 @@ function App() {
               <Route path="/pets/:id" element={<PetDetails />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/verify-password" element={<VerifyPassword />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path='/donate' element={<DonatePet/>}/>
+              <Route path="/about" element={<About />} />
+              <Route path="/resources" element={<Resources />} />
             </Routes>
           </main>
           <Footer />

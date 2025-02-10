@@ -1,171 +1,251 @@
 import { create } from 'zustand';
-interface AuthState {
-  user: null | { id: string; name: string; email: string };
+import axios, { AxiosError } from 'axios';
+
+// Configure axios defaults
+axios.defaults.withCredentials = true;
+axios.defaults.baseURL = 'http://localhost:5000';
+
+interface Pet {
+  _id: string;
+  name: string;
+  type: string;
+  breed: string;
+  age: number;
+  location: string;
+  description: string;
+  photo: {
+    data: string;
+    contentType: string;
+  };
+  status: 'available' | 'pending' | 'adopted';
+  health: {
+    vaccinated: boolean;
+    neutered: boolean;
+    microchipped: boolean;
+  };
+  characteristics: string[];
+}
+
+interface AdoptionRequest {
+  _id: string;
+  petId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+interface User {
+  _id: string;
+  name: string;
+  email: string;
+  favorites: Pet[];
+  adoptionRequests: AdoptionRequest[];
+}
+
+interface AuthErrorResponse {
+  success: false;
+  error: string;
+}
+
+interface AuthStore {
+  user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  register: (name: string, email: string, password: string) => Promise<void>;
-  // ... other actions
-
-}
-
-interface AuthActions {
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  checkAuthStatus: () => Promise<void>;
+  refreshUserData: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState & AuthActions>((set) => ({
+const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isAuthenticated: false,
-  loading: false,
+  isLoading: false,
   error: null,
 
-  login: async (email, password) => {
+  login: async (email: string, password: string) => {
     try {
       set({ isLoading: true, error: null });
-      
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include'
+      console.log('Attempting login with:', { 
+        email, 
+        emailLength: email.length,
+        passwordLength: password.length 
       });
-      console.log(response)
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error('HElo failed' || 'Login failed');
+      
+      const response = await axios.post('/api/auth/login', 
+        { 
+          email: email.trim().toLowerCase(), 
+          password: password.trim() 
+        },
+        { 
+          withCredentials: true,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
+      );
+      
+      console.log('Login response:', {
+        success: response.data.success,
+        user: response.data.user ? 'User data received' : 'No user data'
+      });
+
+      if (!response.data.success) {
+        console.error('Login failed:', response.data.error);
+        throw new Error(response.data.error || 'Login failed');
       }
 
-      const data = await response.json();
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Login failed', loading: false });
-      throw error;
-    }
-  },
-  refreshUserData: async () => {
-    try {
-      const response = await fetch('http://localhost:5000/api/auth/check-auth', {
-        credentials: 'include'
+      set({
+        user: response.data.user,
+        isAuthenticated: true,
+        error: null
       });
-      const data = await response.json();
-      if (data.isAuthenticated) {
-        set({ 
-          user: data.user,
-          isAuthenticated: true
-        });
+    } catch (err: any) {
+      console.error('Detailed login error:', {
+        errorName: err.name,
+        errorMessage: err.message,
+        isAxiosError: axios.isAxiosError(err),
+        responseStatus: err.response?.status,
+        responseData: err.response?.data
+      });
+      
+      let errorMessage = 'An unexpected error occurred';
+      
+      if (axios.isAxiosError(err)) {
+        // Handle Axios-specific errors
+        if (err.response) {
+          // The request was made and the server responded with a status code
+          errorMessage = err.response.data?.error || 
+                         err.response.data?.message || 
+                         `Login failed with status ${err.response.status}`;
+        } else if (err.request) {
+          // The request was made but no response was received
+          errorMessage = 'No response received from server';
+        } else {
+          // Something happened in setting up the request
+          errorMessage = 'Error setting up login request';
+        }
+      } else if (err instanceof Error) {
+        // Handle other types of errors
+        errorMessage = err.message;
       }
-    } catch (error) {
-      console.error('Refresh error:', error);
+
+      // Update store state
+      set({ 
+        error: errorMessage,
+        isAuthenticated: false,
+        user: null,
+        isLoading: false
+      });
+
+      // Re-throw to allow component to handle if needed
+      throw new Error(errorMessage);
+    } finally {
+      set({ isLoading: false });
     }
   },
+
   register: async (name: string, email: string, password: string) => {
     try {
       set({ isLoading: true, error: null });
+      const response = await axios.post<{ success: true; user: User } | AuthErrorResponse>('/api/auth/register', { name, email, password });
       
-      const response = await fetch('http://localhost:5000/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Registration failed');
+      if ('success' in response.data && response.data.success === false) {
+        throw new Error(response.data.error || 'Registration failed');
       }
 
-      const data = await response.json();
-      set({ 
-        user: data.user, 
-        isAuthenticated: true, 
-        isLoading: false 
-      });
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Registration failed',
-        isLoading: false
-      });
-      throw error;
+      if ('user' in response.data) {
+        set({
+          user: response.data.user,
+          isAuthenticated: true,
+          error: null
+        });
+      }
+    } catch (err) {
+      console.error('Registration error:', err);
+      if (axios.isAxiosError(err)) {
+        const axiosError = err as AxiosError<AuthErrorResponse>;
+        set({ error: axiosError.response?.data?.error || 'Registration failed. Please try again.' });
+      } else {
+        set({ error: 'An unexpected error occurred' });
+      }
+      throw err;
+    } finally {
+      set({ isLoading: false });
     }
   },
-  
 
   logout: async () => {
     try {
-      await fetch('http://localhost:5000/api/auth/logout', {
-        credentials: 'include'
+      set({ isLoading: true, error: null });
+      const response = await axios.post<{ success: true } | AuthErrorResponse>('/api/auth/logout');
+      
+      if ('success' in response.data && response.data.success === false) {
+        throw new Error(response.data.error || 'Logout failed');
+      }
+
+      set({
+        user: null,
+        isAuthenticated: false,
+        error: null
       });
-      set({ user: null, isAuthenticated: false });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Logout failed' });
+    } catch (err) {
+      console.error('Logout error:', err);
+      if (axios.isAxiosError(err)) {
+        const axiosError = err as AxiosError<AuthErrorResponse>;
+        set({ error: axiosError.response?.data?.error || 'Logout failed. Please try again.' });
+      } else {
+        set({ error: 'An unexpected error occurred' });
+      }
+    } finally {
+      set({ isLoading: false });
     }
   },
 
-  checkAuthStatus: async () => {
+  refreshUserData: async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/auth/check-auth', {
-        credentials: 'include'
-      });
+      set({ isLoading: true, error: null });
+      const response = await axios.get<{ success: true; user: User } | AuthErrorResponse>('/api/auth/me');
       
-      if (!response.ok) throw new Error('Auth check failed');
-      
-      const data = await response.json();
-      set({ 
-        isAuthenticated: data.isAuthenticated,
-        user: data.user || null
-      });
-    } catch (error) {
-      set({ isAuthenticated: false, user: null });
+      if ('success' in response.data && response.data.success === false) {
+        throw new Error(response.data.error || 'Failed to fetch user data');
+      }
+
+      if ('user' in response.data) {
+        set({
+          user: response.data.user,
+          isAuthenticated: true,
+          error: null
+        });
+      } else {
+        set({
+          user: null,
+          isAuthenticated: false,
+          error: null
+        });
+      }
+    } catch (err) {
+      console.error('Error refreshing user data:', err);
+      if (axios.isAxiosError(err)) {
+        const axiosError = err as AxiosError<AuthErrorResponse>;
+        if (axiosError.response?.status === 401) {
+          set({
+            user: null,
+            isAuthenticated: false,
+            error: null
+          });
+        } else {
+          set({ error: axiosError.response?.data?.error || 'Failed to refresh user data' });
+        }
+      } else {
+        set({ error: 'An unexpected error occurred' });
+      }
+    } finally {
+      set({ isLoading: false });
     }
-  },
-  // Add these to your auth store actions
-  toggleFavorite: async (petId: string) => {
-    try {
-      await fetch(`http://localhost:5000/api/pets/${petId}/favorite`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      // Refresh user data after successful toggle
-      useAuthStore.getState().refreshUserData();
-    } catch (error) {
-      console.error('Favorite error:', error);
-    }
-  },
-  
-  // Add to your auth store actions
-submitAdoption: async (petId: string) => {
-  try {
-    const response = await fetch(`http://localhost:5000/api/pets/${petId}/adopt`, {
-      method: 'POST',
-      credentials: 'include'
-    });
-    
-    if (!response.ok) throw new Error('Adoption request failed');
-    
-    const updatedRequests = await response.json();
-    set(state => ({
-      user: state.user ? {
-        ...state.user,
-        adoptionRequests: updatedRequests
-      } : null
-    }));
-  } catch (error) {
-    console.error('Adoption error:', error);
-    throw error;
   }
-},
-  
-
-
-
-
-
-
-
-
 }));
 
-// export default useAuthStore;
+export { useAuthStore };
+export type { User, Pet, AdoptionRequest, AuthErrorResponse };

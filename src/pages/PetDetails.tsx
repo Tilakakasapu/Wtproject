@@ -1,219 +1,239 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Heart, MapPin, Calendar, Check, AlertCircle } from 'lucide-react';
+import { Heart, ArrowLeft, Share2 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import axios from 'axios';
+import { Card, Button, CircularProgress } from '@mui/material';
+
+axios.defaults.withCredentials = true;
+axios.defaults.baseURL = 'http://localhost:5000';
+
+interface Pet {
+  _id: string;
+  name: string;
+  type: string;
+  breed: string;
+  age: number;
+  location: string;
+  description: string;
+  photo?: {
+    data: string;
+    contentType: string;
+  };
+  status: 'available' | 'adopted' | 'pending';
+  health: {
+    vaccinated: boolean;
+    neutered: boolean;
+    microchipped: boolean;
+  };
+  characteristics: string[];
+}
 
 export default function PetDetails() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, user, toggleFavorite, submitAdoption } = useAuthStore();
-  const [pet, setPet] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [isAdopting, setIsAdopting] = useState(false);
+  const { isAuthenticated, user, refreshUserData } = useAuthStore();
+  
+  const [pet, setPet] = useState<Pet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [adoptionStatus, setAdoptionStatus] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchPet = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/pets/${id}`, {
-          credentials: 'include'
-        });
-        
-        if (!response.ok) {
+        setLoading(true);
+        const response = await axios.get<{ success: boolean; pet: Pet }>(`/api/pets/${id}`);
+        if (response.data.success) {
+          setPet(response.data.pet);
+          setAdoptionStatus(response.data.pet.status);
+        } else {
           throw new Error('Failed to fetch pet details');
         }
-        
-        const data = await response.json();
-        setPet(data);
-        setIsFavorite(user?.favorites?.includes(data._id) || false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch pet');
+        console.error(err);
+        setError('An error occurred while fetching pet details. Please try again.');
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
     fetchPet();
-  }, [id, user]);
+  }, [id]);
 
   const handleAdoptClick = async () => {
     if (!isAuthenticated) {
-      navigate('/login');
-      return;
+      return navigate('/login', { state: { from: `/pets/${id}`, message: 'Please log in to adopt a pet' } });
     }
-    
+
     try {
-      setIsAdopting(true);
-      await submitAdoption(pet._id);
-      // Refresh pet status
-      const response = await fetch(`http://localhost:5000/api/pets/${pet._id}`);
-      const updatedPet = await response.json();
-      setPet(updatedPet);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Adoption request failed');
-    } finally {
-      setIsAdopting(false);
+      const response = await axios.post(`/api/pets/${id}/adopt`);
+      if (response.data.success) {
+        await refreshUserData();
+        setPet(prev => prev ? { ...prev, status: 'adopted' } : null);
+        setAdoptionStatus('adopted');
+        alert('Pet adopted successfully!');
+      } else {
+        throw new Error(response.data.error || 'Failed to adopt pet');
+      }
+    } catch (err) {
+      console.error(err);
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        alert(err.response.data.error);
+      } else {
+        alert('Failed to submit adoption request. Please try again.');
+      }
     }
   };
 
-  const handleFavoriteClick = async () => {
+  const handleFavoriteClick = async (event: React.MouseEvent) => {
+    event.stopPropagation();
     if (!isAuthenticated) {
-      navigate('/login');
-      return;
+      return navigate('/login', { state: { from: `/pets/${id}`, message: 'Please log in to add pets to favorites' } });
     }
-    
     try {
-      await toggleFavorite(id);
-      setIsFavorite(!isFavorite);
-    } catch (error) {
-      console.error('Failed to update favorites:', error);
+      const response = await axios.post(`/api/pets/${id}/favorite`);
+      if (response.data.success) {
+        await refreshUserData();
+        alert('Favorite status updated successfully!');
+      } else {
+        throw new Error('Failed to update favorite status');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update favorite. Please try again.');
     }
   };
 
-  if (isLoading) {
+  const handleShareClick = async () => {
+    if (!pet) return;
+
+    const shareData = {
+      title: `Check out ${pet.name}!`,
+      text: `Meet ${pet.name}, a ${pet.age} year old ${pet.breed} ${pet.type} available for adoption!`,
+      url: window.location.href
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareData.url);
+        alert('Link copied to clipboard!');
+      }
+    } catch (err) {
+      console.error('Error sharing:', err);
+    }
+  };
+
+  const isFavorite = () => {
+    return user?.favorites?.some((fav) => (typeof fav === 'string' ? fav === id : fav._id === id)) || false;
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600"></div>
+      <div className="flex justify-center items-center h-screen">
+        <CircularProgress />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
-          <h2 className="mt-2 text-lg font-medium text-gray-900">Error loading pet</h2>
-          <p className="mt-1 text-sm text-gray-500">{error}</p>
-        </div>
+      <div className="container mx-auto p-4 text-center">
+        <p className="text-red-600">{error}</p>
+        <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft />}>
+          Back
+        </Button>
       </div>
     );
   }
 
   if (!pet) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
-          <h2 className="mt-2 text-lg font-medium text-gray-900">Pet not found</h2>
-          <p className="mt-1 text-sm text-gray-500">The pet you're looking for doesn't exist.</p>
-        </div>
+      <div className="container mx-auto p-4 text-center">
+        <p>Pet not found</p>
+        <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft />}>
+          Back
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Pet Image */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="relative h-96 lg:h-full"
-            >
+    <div className="container mx-auto p-4">
+      <Button startIcon={<ArrowLeft />} onClick={() => navigate(-1)}>
+        Back
+      </Button>
+      {pet && (
+        <Card className="my-4 p-4 shadow-lg rounded-lg">
+          <div className="flex flex-col md:flex-row">
+            <div className="relative w-full md:w-1/3">
               <img
-                src={pet.imageUrl}
+                src={pet.photo?.data || '/default-pet-image.jpg'}
                 alt={pet.name}
-                className="w-full h-full object-cover"
+                className="w-full h-64 object-cover rounded-lg"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = '/default-pet-image.jpg';
+                }}
               />
-              <button
-                onClick={handleFavoriteClick}
-                className="absolute top-4 right-4 p-2 bg-white rounded-full shadow-md hover:bg-rose-50 transition-colors"
-              >
-                <Heart className={`h-6 w-6 ${isFavorite ? 'text-rose-600 fill-current' : 'text-gray-400'}`} />
-              </button>
-            </motion.div>
-
-            {/* Pet Information */}
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="p-8"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900">{pet.name}</h1>
-                  <p className="text-lg text-gray-600">{pet.breed}</p>
-                </div>
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                  pet.status === 'available' ? 'bg-green-100 text-green-800' :
-                  pet.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-gray-100 text-gray-800'
-                }`}>
-                  {pet.status}
-                </span>
-              </div>
-
-              <div className="flex items-center text-gray-500 mb-6">
-                <MapPin className="h-5 w-5 mr-2" />
-                {pet.location}
-              </div>
-
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 mb-2">About</h2>
-                  <p className="text-gray-600">{pet.description}</p>
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 mb-2">Health</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="flex items-center text-gray-600">
-                      <Check className={`h-5 w-5 ${pet.health.vaccinated ? 'text-green-500' : 'text-gray-400'} mr-2`} />
-                      Vaccinated
-                    </div>
-                    <div className="flex items-center text-gray-600">
-                      <Check className={`h-5 w-5 ${pet.health.neutered ? 'text-green-500' : 'text-gray-400'} mr-2`} />
-                      Neutered
-                    </div>
-                    <div className="flex items-center text-gray-600">
-                      <Check className={`h-5 w-5 ${pet.health.microchipped ? 'text-green-500' : 'text-gray-400'} mr-2`} />
-                      Microchipped
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 mb-2">Characteristics</h2>
-                  <div className="flex flex-wrap gap-2">
-                    {pet.characteristics.map((trait, index) => (
-                      <span
-                        key={index}
-                        className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-sm"
-                      >
-                        {trait}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-6 space-y-4">
+              <div className="absolute top-2 right-2 flex gap-2">
                 <button
-  onClick={handleAdoptClick}
-  disabled={pet.status !== 'available' || isAdopting}
-  className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-rose-600 hover:bg-rose-700 disabled:bg-gray-300 disabled:cursor-not-allowed md:py-4 md:text-lg md:px-10"
->
-  {isAdopting ? (
-    <span className="flex items-center">
-      <svg className="animate-spin h-5 w-5 mr-3 ..." viewBox="0 0 24 24">
-        {/* Loading spinner SVG */}
-      </svg>
-      Processing...
-    </span>
-  ) : (
-    pet.status === 'available' ? 'Start Adoption Process' : 'Adoption Not Available'
-  )}
-</button>
-
-                </div>
+                  onClick={handleFavoriteClick}
+                  className={`p-2 rounded-full shadow-md transition-colors ${
+                    isFavorite()
+                      ? 'bg-rose-100 text-rose-600'
+                      : 'bg-white text-gray-400 hover:bg-rose-50'
+                  }`}
+                >
+                  <Heart className={`h-5 w-5 ${isFavorite() ? 'fill-current' : ''}`} />
+                </button>
+                <button
+                  onClick={handleShareClick}
+                  className="p-2 rounded-full shadow-md bg-white text-gray-400 hover:bg-rose-50"
+                >
+                  <Share2 className="h-5 w-5" />
+                </button>
               </div>
-            </motion.div>
+            </div>
+            <div className="md:ml-6 flex-1">
+              <h2 className="text-3xl font-bold mb-2">{pet.name}</h2>
+              <p className="text-gray-600 mb-2">{pet.type} - {pet.breed}</p>
+              <p className="text-gray-600 mb-2">Age: {pet.age} years</p>
+              <p className="text-gray-600 mb-2">Location: {pet.location}</p>
+              <p className="text-gray-600 mb-4">{pet.description}</p>
+              <p className="text-gray-600 mb-4">Characteristics: {pet.characteristics.join(', ')}</p>
+              <p className="text-gray-600 mb-4">Status: {pet.status}</p>
+              <p className="text-gray-600 mb-4">
+                Health: Vaccinated - {pet.health.vaccinated ? 'Yes' : 'No'}, 
+                Neutered - {pet.health.neutered ? 'Yes' : 'No'}, 
+                Microchipped - {pet.health.microchipped ? 'Yes' : 'No'}
+              </p>
+              {pet.status === 'adopted' ? (
+                <div className="mt-4 px-6 py-2 bg-gray-400 text-white rounded-md cursor-not-allowed text-center">
+                  This Pet Has Been Adopted
+                </div>
+              ) : (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleAdoptClick}
+                  className="mt-4 w-full"
+                  sx={{
+                    backgroundColor: '#e11d48',
+                    '&:hover': {
+                      backgroundColor: '#be123c',
+                    },
+                  }}
+                >
+                  Adopt Now
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </Card>
+      )}
     </div>
   );
 }
